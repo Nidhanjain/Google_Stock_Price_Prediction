@@ -16,6 +16,9 @@ st.set_page_config(
     page_icon="📈",
     layout="centered"
 )
+if st.button("🧹 Emergency Cache Clear"):
+    st.cache_data.clear()
+    st.success("Cache wiped! Try the prediction again.")
 
 # ----------------------------
 # 2. GLOBAL STYLING & DISCLAIMER
@@ -39,17 +42,23 @@ st.info("""
 # ----------------------------
 # 3. GEMINI CLIENT INITIALIZATION
 # ----------------------------
+# ----------------------------
+# 3. GEMINI CLIENT INITIALIZATION
+# ----------------------------
 def get_client(use_backup=False):
-    """Initializes client with Primary or Backup key from st.secrets."""
+    # FOR LOCAL TESTING ONLY: Replace "your-key-here" with your actual key
+    # return genai.Client(api_key="your-actual-api-key-string") 
+    
     try:
+        # Normal production logic
         if use_backup:
-            key = st.secrets.get("GEMINI_API_KEY_BACKUP")
-            if not key:
-                key = st.secrets["GEMINI_API_KEY"]
+            key = st.secrets.get("GEMINI_API_KEY_BACKUP") or st.secrets["GEMINI_API_KEY"]
         else:
             key = st.secrets["GEMINI_API_KEY"]
         return genai.Client(api_key=key)
     except Exception:
+        # If it fails, let's print a better error so you know WHY it's None
+        st.error("Error: Client could not be initialized. Check your .streamlit/secrets.toml file.")
         return None
 
 # Initial global client
@@ -84,7 +93,7 @@ def get_xai_analysis(decision, prob, sma20, vol, vol_chg, trend_val):
     while retry_count < max_retries:
         try:
             response = local_client.models.generate_content(
-                model="gemini-2.0-flash", 
+                model="gemini-1.5-flash", 
                 contents=prompt,
                 config={"system_instruction": system_instr, "temperature": 0.7}
             )
