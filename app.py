@@ -38,12 +38,12 @@ except Exception as e:
     st.error("Missing GEMINI_API_KEY in Streamlit Secrets.")
 
 # ----------------------------
-# 4. ROBUST AI ANALYST (WITH BACKOFF & CACHING)
+# 4. ROBUST AI ANALYST (FIXED 404 & 429)
 # ----------------------------
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_xai_analysis(decision, prob, sma20, vol, vol_chg, trend_val):
     """
-    Expert AI Analyst with Exponential Backoff logic to bypass 429 errors.
+    Expert AI Analyst using Gemini 2.0 Flash with Exponential Backoff.
     """
     system_instr = "You are a Senior Quantitative Analyst at Google Finance."
     prompt = f"""
@@ -56,29 +56,35 @@ def get_xai_analysis(decision, prob, sma20, vol, vol_chg, trend_val):
     # --- EXPONENTIAL BACKOFF LOGIC ---
     max_retries = 3
     retry_count = 0
-    wait_time = 2  # Start with 2 seconds
+    wait_time = 2  
 
     while retry_count < max_retries:
         try:
+            # FIX: Updated to gemini-2.0-flash to resolve 404 NOT_FOUND
             response = client.models.generate_content(
-                model="gemini-1.5-flash", # 1.5 is more stable for free tier
+                model="gemini-2.0-flash", 
                 contents=prompt,
-                config={"system_instruction": system_instr, "temperature": 0.7}
+                config={
+                    "system_instruction": system_instr, 
+                    "temperature": 0.7
+                }
             )
             return response.text
         except errors.ClientError as e:
+            # Check for Rate Limit (429)
             if "429" in str(e):
                 retry_count += 1
                 if retry_count == max_retries:
                     return "⚠️ AI Analyst is currently busy. Please wait 60 seconds."
-                
-                # Wait with jitter (randomness) to avoid hitting the server at the same time
                 time.sleep(wait_time + random.random())
-                wait_time *= 2 # Double the wait time for next attempt
+                wait_time *= 2 
+            # Check for Model Not Found (404)
+            elif "404" in str(e):
+                return "❌ Model Version Error: Please ensure you are using 'gemini-2.0-flash'."
             else:
                 return f"❌ API Error: {str(e)}"
+    
     return "AI Analyst timed out."
-
 # ----------------------------
 # 5. UI HEADER & DESCRIPTION
 # ----------------------------
