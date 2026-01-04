@@ -2,216 +2,190 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import time
+import random
 from google import genai
+from google.genai import errors
 from predict import predict_today
 
 # ----------------------------
-# Page config
+# 1. PAGE CONFIGURATION
 # ----------------------------
 st.set_page_config(
-    page_title="Google Stock Price Prediction System",
+    page_title="Google Stock Price Prediction System | XAI",
+    page_icon="📈",
     layout="centered"
 )
 
-# --- NEW: INITIALIZE GOOGLE GENAI CLIENT ---
-# This pulls your API key from Streamlit's Secret Manager
-client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+# ----------------------------
+# 2. GLOBAL STYLING
+# ----------------------------
+st.markdown("""
+    <style>
+    .main { background-color: #0e1117; color: white; }
+    .stMetric { background-color: #1f2937; padding: 15px; border-radius: 10px; border: 1px solid #374151; }
+    .stButton>button { width: 100%; border-radius: 5px; height: 3em; background-color: #4CAF50; color: white; }
+    </style>
+    """, unsafe_allow_html=True)
 
-st.title("📈 Stock Prediction System (Next Day)")
-st.markdown(
+# ----------------------------
+# 3. GEMINI CLIENT INITIALIZATION
+# ----------------------------
+# Initializing global client for efficiency
+try:
+    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+except Exception as e:
+    st.error("Missing GEMINI_API_KEY in Streamlit Secrets.")
+
+# ----------------------------
+# 4. ROBUST AI ANALYST (WITH BACKOFF & CACHING)
+# ----------------------------
+@st.cache_data(show_spinner=False, ttl=3600)
+def get_xai_analysis(decision, prob, sma20, vol, vol_chg, trend_val):
     """
-    This system is based on stock prices from 2016 to 2021 and predicts:
-    - **Direction (BUY / SELL / NO TRADE)**
-    - **Probability of Move**
-    - **Expected % move**
-    - **Predicted next-day price**
-    - **Confidence price range**
-    
-    ⚠️ All inputs are **DECIMAL values** (example: `0.01 = 1%`)
+    Expert AI Analyst with Exponential Backoff logic to bypass 429 errors.
     """
-)
+    system_instr = "You are a Senior Quantitative Analyst at Google Finance."
+    prompt = f"""
+    ML Prediction for GOOGL: {decision} ({prob:.2%}).
+    Technical Context: SMA20 {sma20*100}%, Volatility {vol*100}%, Volume Change {vol_chg*100}%.
+    Trend: {'Upward' if trend_val == 1 else 'Downward'}.
+    Explain why these technicals led to this specific {decision} signal.
+    """
+
+    # --- EXPONENTIAL BACKOFF LOGIC ---
+    max_retries = 3
+    retry_count = 0
+    wait_time = 2  # Start with 2 seconds
+
+    while retry_count < max_retries:
+        try:
+            response = client.models.generate_content(
+                model="gemini-1.5-flash", # 1.5 is more stable for free tier
+                contents=prompt,
+                config={"system_instruction": system_instr, "temperature": 0.7}
+            )
+            return response.text
+        except errors.ClientError as e:
+            if "429" in str(e):
+                retry_count += 1
+                if retry_count == max_retries:
+                    return "⚠️ AI Analyst is currently busy. Please wait 60 seconds."
+                
+                # Wait with jitter (randomness) to avoid hitting the server at the same time
+                time.sleep(wait_time + random.random())
+                wait_time *= 2 # Double the wait time for next attempt
+            else:
+                return f"❌ API Error: {str(e)}"
+    return "AI Analyst timed out."
+
+# ----------------------------
+# 5. UI HEADER & DESCRIPTION
+# ----------------------------
+st.title("📈 Google Stock Prediction System")
+st.markdown("### Agentic Machine Learning & Explainable AI")
+
+with st.expander("📖 Project Methodology"):
+    st.write("""
+        This system utilizes a **Scikit-Learn** time-series model trained on historical data.
+        The prediction is then fed into **Google Gemini 1.5 Flash** to perform 'Explainable AI' (XAI), 
+        bridging the gap between raw data and human reasoning.
+    """)
 
 st.markdown("---")
 
 # ----------------------------
-# Inputs (ENGINEERED FEATURES)
+# 6. INPUT PARAMETERS
 # ----------------------------
-st.subheader("Enter Today's Engineered Indicators")
+st.subheader("🛠️ Technical Indicators (Today's Values)")
+l_col, r_col = st.columns(2)
 
-price_sma5 = st.number_input(
-    "Price vs SMA-5 (decimal, 0.01 = +1%)",
-    value=0.01
-)
+with l_col:
+    price_sma5 = st.number_input("Price vs SMA-5", value=0.01)
+    price_sma20 = st.number_input("Price vs SMA-20", value=0.02)
+    trend = st.selectbox("Market Trend", [0, 1], format_func=lambda x: "Uptrend" if x == 1 else "Downtrend")
+    ret_5 = st.number_input("5-Day Return", value=0.01)
+    ret_10 = st.number_input("10-Day Return", value=0.02)
 
-price_sma20 = st.number_input(
-    "Price vs SMA-20 (decimal, 0.02 = +2%)",
-    value=0.02
-)
+with r_col:
+    vol_5 = st.number_input("5-Day Volatility", value=0.015, format="%.3f")
+    vol_change = st.number_input("Volume Change", value=0.05)
+    hl_range = st.number_input("High-Low Range", value=0.01)
+    oc_range = st.number_input("Open-Close Range", value=0.005)
+    today_close = st.number_input("Today's Close Price ($)", value=150.00)
 
-trend = st.selectbox(
-    "Trend (SMA-5 > SMA-20)",
-    options=[0, 1],
-    format_func=lambda x: "Uptrend" if x == 1 else "Downtrend"
-)
-
-ret_5 = st.number_input(
-    "5-day Return (decimal)",
-    value=0.01
-)
-
-ret_10 = st.number_input(
-    "10-day Return (decimal)",
-    value=0.02
-)
-
-vol_5 = st.number_input(
-    "5-day Volatility (std of returns)",
-    value=0.015
-)
-
-vol_change = st.number_input(
-    "Volume Change (decimal)",
-    value=0.05
-)
-
-hl_range = st.number_input(
-    "High-Low Range ((H−L)/Close)",
-    value=0.01
-)
-
-oc_range = st.number_input(
-    "Open-Close Range ((C−O)/O)",
-    value=0.005
-)
-
-today_close = st.number_input(
-    "Today's Close Price",
-    value=100.0,
-    min_value=0.01
-)
-
-# ----------------------------
-# Build feature dict
-# ----------------------------
 today_features = {
-    "price_sma5": price_sma5,
-    "price_sma20": price_sma20,
-    "trend": trend,
-    "ret_5": ret_5,
-    "ret_10": ret_10,
-    "vol_5": vol_5,
-    "vol_change": vol_change,
-    "hl_range": hl_range,
-    "oc_range": oc_range
+    "price_sma5": price_sma5, "price_sma20": price_sma20, "trend": trend,
+    "ret_5": ret_5, "ret_10": ret_10, "vol_5": vol_5,
+    "vol_change": vol_change, "hl_range": hl_range, "oc_range": oc_range
 }
 
+# ----------------------------
+# 7. PREDICTION AND VISUALIZATION
+# ----------------------------
 st.markdown("---")
-
-# ----------------------------
-# Prediction Logic
-# ----------------------------
-# Create 3 columns for quick stats
-col1, col2, col3 = st.columns(3)
-col1.metric("Ticker", "GOOGL")
-col2.metric("Current Price", f"${today_close}")
-col3.metric("Training Era", "2016-2021")
-if st.button("🔮 Predict"):
+if st.button("🔮 Run Predictive Engine"):
     result = predict_today(today_features, today_close)
-    if result is None:
-        st.error("Prediction failed. Please check your inputs.")
-        st.stop()
+    
+    if result:
+        # Display Decision Cards
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Ticker", "GOOGL")
+        with c2:
+            st.metric("Signal", result['decision'])
+        with c3:
+            st.metric("Confidence", f"{result['prob_up']:.1%}")
 
-    # Display the results with color coding
-    if result["decision"] == "BUY":
-        st.success(f"📈 BUY SIGNAL (Prob: {result['prob_up']:.2f})")
-        st.write(f"**Predicted Target Price:** ${result['predicted_price']:.2f}")
-        st.write(f"**Confidence Range:** ${result['lower_price']:.2f} - ${result['upper_price']:.2f}")
-        
-    elif result["decision"] == "SELL":
-        # For SELL, we show the probability of the price going DOWN (1 - prob_up)
-        st.error(f"📉 SELL SIGNAL (Prob: {1 - result['prob_up']:.2f})")
-        st.write(f"**Predicted Target Price:** ${result['predicted_price']:.2f}")
-        st.write(f"**Confidence Range:** ${result['lower_price']:.2f} - ${result['upper_price']:.2f}")
-        
-    else:
-        st.warning(f"⚖️ NO TRADE (Neutral Zone - Prob: {result['prob_up']:.2f})")
-        st.info("The model is not confident enough in either direction to issue a signal.")
+        if result["decision"] == "BUY":
+            st.success(f"📈 **BUY SIGNAL ISSUED** at ${today_close}")
+        elif result["decision"] == "SELL":
+            st.error(f"📉 **SELL SIGNAL ISSUED** at ${today_close}")
+        else:
+            st.warning("⚖️ **NEUTRAL - NO TRADE RECOMMENDED**")
 
-    st.markdown("---")
-    
-    # ----------------------------
-    # Visualization Section
-    # ----------------------------
-    st.subheader("Price Trend Visualization")
-    
-    # Create a simulated recent history leading up to today_close
-    history_size = 20
-    noise = np.random.normal(0, 1, history_size)
-    history = np.linspace(today_close * 0.95, today_close, history_size) + noise
-    
-    fig, ax = plt.subplots(figsize=(10, 5))
-    ax.plot(range(history_size), history, label="Recent History", color="#1f77b4", linewidth=2)
-    
-    # Plot Prediction
-    prediction_index = history_size
-    ax.scatter(prediction_index, result['predicted_price'], color='orange', s=100, label="Predicted Price", zorder=5)
-    
-    # Add Confidence Interval Bar
-    ax.vlines(prediction_index, result['lower_price'], result['upper_price'], color='orange', alpha=0.3, linewidth=5, label="Confidence Band")
-    
-    # Formatting
-    ax.set_title(f"Next Day Forecast for ${today_close}", color="white")
-    ax.set_ylabel("Price ($)", color="white")
-    ax.set_facecolor("#262730")
-    fig.patch.set_facecolor("#262730")
-    ax.tick_params(colors='white')
-    ax.grid(color='gray', linestyle='--', linewidth=0.5, alpha=0.3)
-    ax.legend()
-    
-    st.pyplot(fig)
+        st.write(f"**Predicted Target:** `${result['predicted_price']:.2f}` (Range: `${result['lower_price']:.2f}` - `${result['upper_price']:.2f}`)")
 
-    # --- NEW: GOOGLE GEMINI 2.0 FLASH INTEGRATION ---
-    # --- HIGHLIGHT: GEMINI 2.0 FLASH AI AGENT INTEGRATION ---
-    st.markdown("---")
-    st.header("🤖 Google Gemini: Explainable AI (XAI) Analyst")
-    
-    with st.spinner("Agentic Reasoning in progress..."):
-        # We give Gemini a specific 'Persona' and 'Task' to make it a highlight
-        system_instruction = "You are a Senior Quantitative Analyst at Google Cloud Finance. Your job is to explain ML model outputs to retail investors using clear, professional, and actionable language."
+        # --- Charting ---
+        st.subheader("📊 Price Action Forecast")
+        h_size = 20
+        h_data = np.linspace(today_close*0.97, today_close, h_size) + np.random.normal(0, 0.4, h_size)
         
-        prompt = f"""
-        --- ML MODEL OUTPUT ---
-        Prediction: {result['decision']}
-        Confidence: {result['prob_up']:.2f}
-        Predicted Target: ${result['predicted_price']:.2f}
+        fig, ax = plt.subplots(figsize=(10, 4))
+        ax.plot(range(h_size), h_data, color="#3b82f6", label="Historical")
+        ax.scatter(h_size, result['predicted_price'], color="#fbbf24", s=100, label="Target")
+        ax.vlines(h_size, result['lower_price'], result['upper_price'], color="#fbbf24", alpha=0.3, linewidth=6)
         
-        --- TECHNICAL DATA ---
-        - Price vs 20-day Moving Average: {price_sma20*100}%
-        - Volume Change: {vol_change*100}%
-        - Volatility: {vol_5*100}%
-        - Trend Direction: {'Uptrend' if trend == 1 else 'Downtrend'}
-        
-        --- ANALYSIS REQUEST ---
-        1. Explain WHY the model chose a '{result['decision']}' signal based on these specific technical indicators.
-        2. Identify the #1 Risk Factor for this trade today.
-        3. Suggest a 'What-If' scenario: If Volume Change spikes to 20%, how would it change the sentiment?
-        """
-        
-        # Using the newest Client-side System Instructions (Highlight of Gemini 2.0)
-        response = client.models.generate_content(
-            model="gemini-2.0-flash", 
-            contents=prompt,
-            config={
-                "system_instruction": system_instruction,
-                "temperature": 0.7  # Balanced between creative and factual
-            }
-        )
-        
-        # Displaying the response in a more 'Professional' container
-        with st.expander("🔍 Deep Dive: How the AI made this decision", expanded=True):
-            st.markdown(response.text)
-            st.info("💡 **GDG Presentation Tip:** This section uses 'Explainable AI' (XAI) to solve the black-box problem of traditional Machine Learning.")
+        ax.set_facecolor("#111827")
+        fig.patch.set_facecolor("#111827")
+        ax.tick_params(colors='white')
+        ax.legend()
+        st.pyplot(fig)
 
+        # ----------------------------
+        # 8. THE GEMINI AI REPORT (XAI)
+        # ----------------------------
+        st.markdown("---")
+        st.subheader("🤖 Gemini Explainable AI (XAI) Analysis")
+        
+        with st.spinner("Wait... Gemini is calculating with backoff..."):
+            report = get_xai_analysis(
+                result['decision'], 
+                result['prob_up'], 
+                price_sma20, 
+                vol_5, 
+                vol_change, 
+                trend
+            )
+            
+            with st.chat_message("assistant"):
+                st.markdown(report)
+            
+            st.caption("AI Insight powered by Gemini 1.5 Flash. Rate-limit logic: Enabled.")
+
+# ----------------------------
+# 9. FOOTER
+# ----------------------------
 st.markdown("---")
-st.caption("Model uses time-series trained ML + Google Gemini 2.0 for Explainable AI.")
+st.markdown("<p style='text-align: center; color: #6b7280;'>Developed for GDG Demo 2026 | Google Gemini API Tier: Free</p>", unsafe_allow_html=True)
 
