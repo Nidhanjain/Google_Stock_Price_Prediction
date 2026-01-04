@@ -15,7 +15,7 @@ st.set_page_config(
 
 # --- NEW: INITIALIZE GOOGLE GENAI CLIENT ---
 # This pulls your API key from Streamlit's Secret Manager
-client = genai.Client(api_key=st.secrets["AIzaSyBCN1doTFu6_wddzsJst_GfAdhNKBOviKA"])
+client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 
 st.title("📈 Stock Prediction System (Next Day)")
 st.markdown(
