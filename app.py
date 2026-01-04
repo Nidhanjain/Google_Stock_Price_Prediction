@@ -28,13 +28,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# GDG Presentation Instruction Disclaimer
 st.info("""
 **🚀 GDG System Architecture & Instructions:**
-1. **ML Layer:** Traditional Scikit-Learn model predicts price direction based on 2016-2021 historical patterns.
-2. **XAI Layer:** Google Gemini 2.0 Flash interprets the "Black Box" metrics into human-readable logic.
-3. **Resilience:** If the API is busy, the system uses **Exponential Backoff** (Wait 2s, 4s, 8s) and **Dual-Key Failover**.
-4. **Optimization:** Results are cached to minimize API costs and maximize speed.
+1. **ML Layer:** Scikit-Learn time-series model.
+2. **XAI Layer:** Google Gemini 2.0 Flash (Explainable AI).
+3. **Resilience:** Dual-Key Failover + 12s cooldown to respect 5 RPM limits.
+4. **Optimization:** Cached results for presentation speed.
 """)
 
 # ----------------------------
@@ -45,27 +44,30 @@ def get_client(use_backup=False):
     try:
         if use_backup:
             key = st.secrets.get("GEMINI_API_KEY_BACKUP")
-            if not key: # Fallback to primary if backup not set
+            if not key:
                 key = st.secrets["GEMINI_API_KEY"]
         else:
             key = st.secrets["GEMINI_API_KEY"]
         return genai.Client(api_key=key)
     except Exception:
-        st.error("API Key not found in Secrets. Please check your Dashboard.")
         return None
 
-# Global client initialization
+# Initial global client
 client = get_client()
 
 # ----------------------------
-# 4. ROBUST AI ANALYST (DUAL-KEY + BACKOFF + JITTER)
+# 4. ROBUST AI ANALYST (PURE LOGIC - NO UI)
 # ----------------------------
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_xai_analysis(decision, prob, sma20, vol, vol_chg, trend_val):
     """
-    Expert AI Analyst with Failover and Jittered Exponential Backoff.
+    Expert AI Analyst Logic. 
+    IMPORTANT: This function contains NO 'st.' commands to avoid CacheReplayClosureError.
     """
-    global client
+    import time, random
+    # We define a local reference to avoid global scope issues in caching
+    local_client = get_client()
+    
     system_instr = "You are a Senior Quantitative Analyst at Google Finance."
     prompt = f"""
     ML Prediction for GOOGL: {decision} ({prob:.2%}).
@@ -76,41 +78,31 @@ def get_xai_analysis(decision, prob, sma20, vol, vol_chg, trend_val):
 
     max_retries = 3
     retry_count = 0
-    wait_time = 2  
+    # 12 seconds is the magic number to clear the 5 requests-per-minute limit
+    wait_time = 12.0 
 
     while retry_count < max_retries:
         try:
-            response = client.models.generate_content(
+            response = local_client.models.generate_content(
                 model="gemini-2.0-flash", 
                 contents=prompt,
                 config={"system_instruction": system_instr, "temperature": 0.7}
             )
-            return response.text
-        except errors.ClientError as e:
+            return {"status": "success", "text": response.text}
+            
+        except Exception as e:
             if "429" in str(e):
                 retry_count += 1
-                
-                # --- AUTO-SWITCH KEY LOGIC ---
                 if retry_count == 1:
-                    st.toast("Primary API busy, switching to backup...", icon="🔄")
-                    client = get_client(use_backup=True)
+                    local_client = get_client(use_backup=True)
                 
-                # --- JITTERED BACKOFF ---
-                jitter = random.uniform(1.0, 3.0)
-                sleep_duration = wait_time + jitter
-                st.warning(f"Rate limit hit. Retrying in {sleep_duration:.1f}s...")
-                time.sleep(sleep_duration)
-                
-                wait_time *= 2 # Exponentially increase wait
-                
-                if retry_count == max_retries:
-                    return "⚠️ AI Analyst is currently busy. Please wait 60 seconds."
-            elif "404" in str(e):
-                return "❌ Model Version Error: Ensure SDK supports gemini-2.0-flash."
+                # Sleep without UI feedback to keep cache clean
+                time.sleep(wait_time + random.uniform(1, 2))
+                wait_time *= 1.5
             else:
-                return f"❌ API Error: {str(e)}"
+                return {"status": "error", "text": str(e)}
     
-    return "AI Analyst timed out."
+    return {"status": "timeout", "text": "AI Analyst is busy. Using failover logic."}
 
 # ----------------------------
 # 5. UI HEADER & DESCRIPTION
@@ -120,9 +112,8 @@ st.markdown("### Agentic Machine Learning & Explainable AI")
 
 with st.expander("📖 Project Methodology"):
     st.write("""
-        This system utilizes a **Scikit-Learn** time-series model trained on historical data.
-        The prediction is then fed into **Google Gemini 2.0 Flash** to perform 'Explainable AI' (XAI), 
-        bridging the gap between raw data and human reasoning.
+        The system utilizes a **Scikit-Learn** model. The prediction is fed into 
+        **Google Gemini 2.0 Flash** to perform 'Explainable AI' (XAI).
     """)
 
 st.markdown("---")
@@ -161,14 +152,10 @@ if st.button("🔮 Run Predictive Engine"):
     result = predict_today(today_features, today_close)
     
     if result:
-        # Display Decision Cards
         c1, c2, c3 = st.columns(3)
-        with c1:
-            st.metric("Ticker", "GOOGL")
-        with c2:
-            st.metric("Signal", result['decision'])
-        with c3:
-            st.metric("Confidence", f"{result['prob_up']:.1%}")
+        with c1: st.metric("Ticker", "GOOGL")
+        with c2: st.metric("Signal", result['decision'])
+        with c3: st.metric("Confidence", f"{result['prob_up']:.1%}")
 
         if result["decision"] == "BUY":
             st.success(f"📈 **BUY SIGNAL ISSUED** at ${today_close}")
@@ -177,32 +164,29 @@ if st.button("🔮 Run Predictive Engine"):
         else:
             st.warning("⚖️ **NEUTRAL - NO TRADE RECOMMENDED**")
 
-        st.write(f"**Predicted Target:** `${result['predicted_price']:.2f}` (Range: `${result['lower_price']:.2f}` - `${result['upper_price']:.2f}`)")
+        st.write(f"**Predicted Target:** `${result['predicted_price']:.2f}`")
 
         # --- Charting ---
         st.subheader("📊 Price Action Forecast")
         h_size = 20
         h_data = np.linspace(today_close*0.97, today_close, h_size) + np.random.normal(0, 0.4, h_size)
-        
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.plot(range(h_size), h_data, color="#3b82f6", label="Historical")
         ax.scatter(h_size, result['predicted_price'], color="#fbbf24", s=100, label="Target")
-        ax.vlines(h_size, result['lower_price'], result['upper_price'], color="#fbbf24", alpha=0.3, linewidth=6)
-        
         ax.set_facecolor("#111827")
         fig.patch.set_facecolor("#111827")
         ax.tick_params(colors='white')
-        ax.legend()
         st.pyplot(fig)
 
         # ----------------------------
-        # 8. THE GEMINI AI REPORT (XAI)
+        # 8. THE GEMINI AI REPORT (UI SIDE)
         # ----------------------------
         st.markdown("---")
         st.subheader("🤖 Gemini Explainable AI (XAI) Analysis")
         
-        with st.spinner("Wait... Gemini is calculating with backoff..."):
-            report = get_xai_analysis(
+        with st.spinner("🤖 Consulting AI Analyst (This takes 12s due to Free Tier limits)..."):
+            # Call the pure cached function
+            report_data = get_xai_analysis(
                 result['decision'], 
                 result['prob_up'], 
                 price_sma20, 
@@ -211,14 +195,21 @@ if st.button("🔮 Run Predictive Engine"):
                 trend
             )
             
-            with st.chat_message("assistant"):
-                st.markdown(report)
+            # Handle UI rendering based on the status
+            if report_data["status"] == "success":
+                with st.chat_message("assistant"):
+                    st.markdown(report_data["text"])
+            elif report_data["status"] == "timeout":
+                st.toast("Primary key busy, tried failover.", icon="🔄")
+                st.warning(report_data["text"])
+            else:
+                st.error(f"AI error: {report_data['text']}")
             
-            st.caption("AI Insight powered by Gemini 2.0 Flash. Rate-limit logic: Jittered Backoff Enabled.")
+            st.caption("Rate-limit logic: Jittered Backoff Enabled (Free Tier 5 RPM).")
 
 # ----------------------------
 # 9. FOOTER
 # ----------------------------
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #6b7280;'>Developed for GDG Hackathon 2026 | Google Gemini API Tier: Free</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #6b7280;'>Developed for GDG Hackathon 2026</p>", unsafe_allow_html=True)
 
