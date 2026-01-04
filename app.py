@@ -18,7 +18,7 @@ st.set_page_config(
 )
 
 # ----------------------------
-# 2. GLOBAL STYLING
+# 2. GLOBAL STYLING & DISCLAIMER
 # ----------------------------
 st.markdown("""
     <style>
@@ -28,23 +28,44 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# GDG Presentation Instruction Disclaimer
+st.info("""
+**🚀 GDG System Architecture & Instructions:**
+1. **ML Layer:** Traditional Scikit-Learn model predicts price direction based on 2016-2021 historical patterns.
+2. **XAI Layer:** Google Gemini 2.0 Flash interprets the "Black Box" metrics into human-readable logic.
+3. **Resilience:** If the API is busy, the system uses **Exponential Backoff** (Wait 2s, 4s, 8s) and **Dual-Key Failover**.
+4. **Optimization:** Results are cached to minimize API costs and maximize speed.
+""")
+
 # ----------------------------
 # 3. GEMINI CLIENT INITIALIZATION
 # ----------------------------
-# Initializing global client for efficiency
-try:
-    client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-except Exception as e:
-    st.error("Missing GEMINI_API_KEY in Streamlit Secrets.")
+def get_client(use_backup=False):
+    """Initializes client with Primary or Backup key from st.secrets."""
+    try:
+        if use_backup:
+            key = st.secrets.get("GEMINI_API_KEY_BACKUP")
+            if not key: # Fallback to primary if backup not set
+                key = st.secrets["GEMINI_API_KEY"]
+        else:
+            key = st.secrets["GEMINI_API_KEY"]
+        return genai.Client(api_key=key)
+    except Exception:
+        st.error("API Key not found in Secrets. Please check your Dashboard.")
+        return None
+
+# Global client initialization
+client = get_client()
 
 # ----------------------------
-# 4. ROBUST AI ANALYST (FIXED 404 & 429)
+# 4. ROBUST AI ANALYST (DUAL-KEY + BACKOFF + JITTER)
 # ----------------------------
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_xai_analysis(decision, prob, sma20, vol, vol_chg, trend_val):
     """
-    Expert AI Analyst using Gemini 2.0 Flash with Exponential Backoff.
+    Expert AI Analyst with Failover and Jittered Exponential Backoff.
     """
+    global client
     system_instr = "You are a Senior Quantitative Analyst at Google Finance."
     prompt = f"""
     ML Prediction for GOOGL: {decision} ({prob:.2%}).
@@ -53,38 +74,44 @@ def get_xai_analysis(decision, prob, sma20, vol, vol_chg, trend_val):
     Explain why these technicals led to this specific {decision} signal.
     """
 
-    # --- EXPONENTIAL BACKOFF LOGIC ---
     max_retries = 3
     retry_count = 0
     wait_time = 2  
 
     while retry_count < max_retries:
         try:
-            # FIX: Updated to gemini-2.0-flash to resolve 404 NOT_FOUND
             response = client.models.generate_content(
                 model="gemini-2.0-flash", 
                 contents=prompt,
-                config={
-                    "system_instruction": system_instr, 
-                    "temperature": 0.7
-                }
+                config={"system_instruction": system_instr, "temperature": 0.7}
             )
             return response.text
         except errors.ClientError as e:
-            # Check for Rate Limit (429)
             if "429" in str(e):
                 retry_count += 1
+                
+                # --- AUTO-SWITCH KEY LOGIC ---
+                if retry_count == 1:
+                    st.toast("Primary API busy, switching to backup...", icon="🔄")
+                    client = get_client(use_backup=True)
+                
+                # --- JITTERED BACKOFF ---
+                jitter = random.uniform(1.0, 3.0)
+                sleep_duration = wait_time + jitter
+                st.warning(f"Rate limit hit. Retrying in {sleep_duration:.1f}s...")
+                time.sleep(sleep_duration)
+                
+                wait_time *= 2 # Exponentially increase wait
+                
                 if retry_count == max_retries:
                     return "⚠️ AI Analyst is currently busy. Please wait 60 seconds."
-                time.sleep(wait_time + random.random())
-                wait_time *= 2 
-            # Check for Model Not Found (404)
             elif "404" in str(e):
-                return "❌ Model Version Error: Please ensure you are using 'gemini-2.0-flash'."
+                return "❌ Model Version Error: Ensure SDK supports gemini-2.0-flash."
             else:
                 return f"❌ API Error: {str(e)}"
     
     return "AI Analyst timed out."
+
 # ----------------------------
 # 5. UI HEADER & DESCRIPTION
 # ----------------------------
@@ -94,7 +121,7 @@ st.markdown("### Agentic Machine Learning & Explainable AI")
 with st.expander("📖 Project Methodology"):
     st.write("""
         This system utilizes a **Scikit-Learn** time-series model trained on historical data.
-        The prediction is then fed into **Google Gemini 1.5 Flash** to perform 'Explainable AI' (XAI), 
+        The prediction is then fed into **Google Gemini 2.0 Flash** to perform 'Explainable AI' (XAI), 
         bridging the gap between raw data and human reasoning.
     """)
 
@@ -187,11 +214,11 @@ if st.button("🔮 Run Predictive Engine"):
             with st.chat_message("assistant"):
                 st.markdown(report)
             
-            st.caption("AI Insight powered by Gemini 1.5 Flash. Rate-limit logic: Enabled.")
+            st.caption("AI Insight powered by Gemini 2.0 Flash. Rate-limit logic: Jittered Backoff Enabled.")
 
 # ----------------------------
 # 9. FOOTER
 # ----------------------------
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #6b7280;'>Developed for GDG Demo 2026 | Google Gemini API Tier: Free</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #6b7280;'>Developed for GDG Hackathon 2026 | Google Gemini API Tier: Free</p>", unsafe_allow_html=True)
 
