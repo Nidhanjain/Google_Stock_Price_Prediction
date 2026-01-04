@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+from google import genai
 from predict import predict_today
 
 # ----------------------------
@@ -11,6 +12,10 @@ st.set_page_config(
     page_title="Google Stock Price Prediction System",
     layout="centered"
 )
+
+# --- NEW: INITIALIZE GOOGLE GENAI CLIENT ---
+# This pulls your API key from Streamlit's Secret Manager
+client = genai.Client(api_key=st.secrets["AIzaSyBCN1doTFu6_wddzsJst_GfAdhNKBOviKA"])
 
 st.title("📈 Stock Prediction System (Next Day)")
 st.markdown(
@@ -112,7 +117,6 @@ col2.metric("Current Price", f"${today_close}")
 col3.metric("Training Era", "2016-2021")
 if st.button("🔮 Predict"):
     result = predict_today(today_features, today_close)
-
     if result is None:
         st.error("Prediction failed. Please check your inputs.")
         st.stop()
@@ -141,7 +145,6 @@ if st.button("🔮 Predict"):
     st.subheader("Price Trend Visualization")
     
     # Create a simulated recent history leading up to today_close
-    # In a real app, you'd load your CSV here
     history_size = 20
     noise = np.random.normal(0, 1, history_size)
     history = np.linspace(today_close * 0.95, today_close, history_size) + noise
@@ -167,6 +170,48 @@ if st.button("🔮 Predict"):
     
     st.pyplot(fig)
 
+    # --- NEW: GOOGLE GEMINI 2.0 FLASH INTEGRATION ---
+    # --- HIGHLIGHT: GEMINI 2.0 FLASH AI AGENT INTEGRATION ---
+    st.markdown("---")
+    st.header("🤖 Google Gemini: Explainable AI (XAI) Analyst")
+    
+    with st.spinner("Agentic Reasoning in progress..."):
+        # We give Gemini a specific 'Persona' and 'Task' to make it a highlight
+        system_instruction = "You are a Senior Quantitative Analyst at Google Cloud Finance. Your job is to explain ML model outputs to retail investors using clear, professional, and actionable language."
+        
+        prompt = f"""
+        --- ML MODEL OUTPUT ---
+        Prediction: {result['decision']}
+        Confidence: {result['prob_up']:.2f}
+        Predicted Target: ${result['predicted_price']:.2f}
+        
+        --- TECHNICAL DATA ---
+        - Price vs 20-day Moving Average: {price_sma20*100}%
+        - Volume Change: {vol_change*100}%
+        - Volatility: {vol_5*100}%
+        - Trend Direction: {'Uptrend' if trend == 1 else 'Downtrend'}
+        
+        --- ANALYSIS REQUEST ---
+        1. Explain WHY the model chose a '{result['decision']}' signal based on these specific technical indicators.
+        2. Identify the #1 Risk Factor for this trade today.
+        3. Suggest a 'What-If' scenario: If Volume Change spikes to 20%, how would it change the sentiment?
+        """
+        
+        # Using the newest Client-side System Instructions (Highlight of Gemini 2.0)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash", 
+            contents=prompt,
+            config={
+                "system_instruction": system_instruction,
+                "temperature": 0.7  # Balanced between creative and factual
+            }
+        )
+        
+        # Displaying the response in a more 'Professional' container
+        with st.expander("🔍 Deep Dive: How the AI made this decision", expanded=True):
+            st.markdown(response.text)
+            st.info("💡 **GDG Presentation Tip:** This section uses 'Explainable AI' (XAI) to solve the black-box problem of traditional Machine Learning.")
+
 st.markdown("---")
-st.caption("Model uses time-series trained classification + regression with confidence bands.")
+st.caption("Model uses time-series trained ML + Google Gemini 2.0 for Explainable AI.")
 
