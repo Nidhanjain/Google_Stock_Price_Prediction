@@ -3,8 +3,10 @@ import pandas as pd
 import numpy as np
 import time
 import plotly.express as px
-from google import genai
+from google import genai  # <--- This is the correct modern Google AI SDK
 from predict import predict_today
+
+
 
 # 1. PAGE CONFIG & CUSTOM STYLING
 st.set_page_config(page_title="Google Stock Analysis System | XAI", layout="wide", initial_sidebar_state="expanded")
