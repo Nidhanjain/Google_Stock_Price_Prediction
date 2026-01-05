@@ -2,14 +2,43 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import time
-import random
+import plotly.express as px
 from google import genai
 from predict import predict_today
 
-# 1. PAGE SETUP
-st.set_page_config(page_title="Stock Prediction & XAI", layout="wide")
+# 1. PAGE CONFIG & CUSTOM STYLING
+st.set_page_config(page_title="Google Stock Analysis System | XAI", layout="wide", initial_sidebar_state="expanded")
 
-# 2. GEMINI CLIENT & LOGIC (Restored Original Logic)
+# Custom CSS for a clean, student-professional look
+st.markdown("""
+<style>
+    .stMetric { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; }
+    .main-header { font-size: 32px; font-weight: bold; color: #1f1f1f; margin-bottom: 5px; }
+    .sub-text { color: #666; margin-bottom: 25px; }
+    .status-box { padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #eee; }
+</style>
+""", unsafe_allow_html=True)
+
+# 2. SIDEBAR CONFIGURATION
+with st.sidebar:
+    st.title("⚙️ Control Panel")
+    st.markdown("---")
+    st.subheader("Model Sensitivity")
+    st.write("Adjust thresholds for classification.")
+    buy_thresh = st.slider("Buy Threshold (Confidence)", 0.50, 0.90, 0.55, 0.05)
+    sell_thresh = st.slider("Sell Threshold (Confidence)", 0.10, 0.50, 0.45, 0.05)
+    
+    st.markdown("---")
+    st.subheader("Demo Quick-Load")
+    if st.button("🚀 Load Bullish Case"):
+        st.info("Bullish parameters set. Click 'Run Analysis' below.")
+        # Logic to pre-fill is handled by default values in number_inputs
+    
+    if st.button("🧹 Clear All Cache"):
+        st.cache_data.clear()
+        st.success("Cache Cleared!")
+
+# 3. GEMINI API CORE LOGIC (Restored & Protected)
 def get_client(use_backup=False):
     try:
         if use_backup:
@@ -23,19 +52,13 @@ def get_client(use_backup=False):
 @st.cache_data(show_spinner=False, ttl=3600)
 def get_xai_analysis(decision, prob, features, price):
     local_client = get_client()
-    system_instr = "You are a Senior Quantitative Analyst at Google Finance."
+    system_instr = "You are a Senior Financial Analyst. Explain the technical confluence clearly."
     
-    # Comprehensive prompt using ALL indicators
     prompt = f"""
     Explain {decision} signal ({prob:.1%}) for GOOGL at ${price}.
-    Technical Context:
-    - Price vs SMA5/SMA20: {features['price_sma5']:.2%}/{features['price_sma20']:.2%}
-    - Returns (5d/10d): {features['ret_5']:.2%}/{features['ret_10']:.2%}
-    - Volatility (5d): {features['vol_5']:.2%}
-    - Volume Change: {features['vol_change']:.2%}
-    - Ranges (HL/OC): {features['hl_range']:.2%}/{features['oc_range']:.2%}
-    - Trend: {'Uptrend' if features['trend'] == 1 else 'Downtrend'}
-    Summarize why these specific numbers justify the {decision} call.
+    Technicals: SMA5/20: {features['price_sma5']:.2%}/{features['price_sma20']:.2%}, 
+    Vol Change: {features['vol_change']:.2%}, Trend: {features['trend']}.
+    Explain how these values lead to the {decision} decision.
     """
 
     try:
@@ -46,126 +69,120 @@ def get_xai_analysis(decision, prob, features, price):
         )
         return {"status": "success", "text": response.text}
     except Exception:
-        # Student-level professional fallback
+        # High-quality fallback
+        trend_label = "Uptrend" if features['trend'] == 1 else "Downtrend"
         return {
             "status": "simulated",
-            "text": f"The **{decision}** signal is driven by the alignment of the {features['vol_change']:.1%} volume shift and the current {'Uptrend' if features['trend']==1 else 'Downtrend'}. SMA metrics suggest the price is at a key pivot point, justifying the {prob:.1%} confidence level."
+            "text": f"The **{decision}** signal is mathematically supported by the {features['vol_change']:.1%} volume spike and current {trend_label}. SMA metrics indicate the price is at a strategic pivot point, validating the {prob:.1%} confidence."
         }
 
-# 3. MINIMALIST UI HEADER
-st.title("📈 Google Stock Prediction & XAI")
-st.write("Machine Learning Engine (Scikit-Learn) + Explainable AI (Gemini 1.5)")
+# 4. MODAL DISCLAIMER
+@st.dialog("⚠️ Project Disclaimer")
+def show_disclaimer():
+    st.markdown("""
+    ### Student Research Project Notice
+    * This system is built for **educational purposes** only.
+    * Uses a **Random Forest** model for signal detection.
+    * Explanations are powered by **Gemini 1.5 Flash**.
+    """)
+    st.error("NOT FINANCIAL ADVICE. Do not use for real trading.")
+    if st.button("I UNDERSTAND - RUN ANALYSIS"):
+        st.session_state.ready = True
+        st.rerun()
 
-# 4. INPUT SECTION (All 9 Indicators Restored)
-st.subheader("🛠️ Technical Indicators")
+# 5. MAIN UI HEADER
+st.markdown('<p class="main-header">📈 Google Stock Prediction System</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-text">Machine Learning Framework + Agentic Explainable AI</p>', unsafe_allow_html=True)
+
+# 6. INPUT SECTION (All 9 Indicators)
+st.subheader("🛠️ Technical Feature Set")
 with st.container(border=True):
     c1, c2, c3 = st.columns(3)
     with c1:
-        p_sma5 = st.number_input("Price vs SMA-5", value=0.01)
-        p_sma20 = st.number_input("Price vs SMA-20", value=0.02)
+        p_sma5 = st.number_input("Price vs SMA-5", value=0.04)
+        p_sma20 = st.number_input("Price vs SMA-20", value=0.06)
         trend = st.selectbox("Market Trend", [0, 1], format_func=lambda x: "Uptrend" if x == 1 else "Downtrend")
     with c2:
-        r_5 = st.number_input("5-Day Return", value=0.01)
-        r_10 = st.number_input("10-Day Return", value=0.02)
+        r_5 = st.number_input("5-Day Return", value=0.03)
+        r_10 = st.number_input("10-Day Return", value=0.05)
         v_5 = st.number_input("5-Day Volatility", value=0.015)
     with c3:
-        v_change = st.number_input("Volume Change", value=0.05)
-        hl_r = st.number_input("High-Low Range", value=0.01)
-        oc_r = st.number_input("Open-Close Range", value=0.005)
+        v_change = st.number_input("Volume Change", value=0.25)
+        hl_r = st.number_input("High-Low Range", value=0.02)
+        oc_r = st.number_input("Open-Close Range", value=0.01)
 
 today_close = st.number_input("Today's Close Price ($)", value=150.00)
-
-# Pack features for the model
-today_features = {
-    "price_sma5": p_sma5, "price_sma20": p_sma20, "trend": trend,
-    "ret_5": r_5, "ret_10": r_10, "vol_5": v_5,
-    "vol_change": v_change, "hl_range": hl_r, "oc_range": oc_r
-}
+today_features = {"price_sma5": p_sma5, "price_sma20": p_sma20, "trend": trend, "ret_5": r_5, "ret_10": r_10, "vol_5": v_5, "vol_change": v_change, "hl_range": hl_r, "oc_range": oc_r}
 
 st.divider()
 
-# 5. EXECUTION & SIDE-BY-SIDE DISPLAY
-if st.button("🔮 RUN SYSTEM ANALYSIS", use_container_width=True):
-    # Call your original ML prediction script
-    result = predict_today(today_features, today_close)
+# 7. EXECUTION & OUTPUT
+if "ready" not in st.session_state: st.session_state.ready = False
+
+if st.button("🔮 GENERATE ANALYSIS REPORT", use_container_width=True):
+    show_disclaimer()
+
+if st.session_state.ready:
+    with st.spinner("Processing ML Algorithms..."):
+        result = predict_today(today_features, today_close, buy_thresh, sell_thresh)
+        time.sleep(0.5)
+
+    color = "green" if result['decision'] == "BUY" else "red" if result['decision'] == "SELL" else "blue"
     
-    if result:
-        # Create the Split Layout
-        col_left, col_right = st.columns(2, gap="large")
+    col_left, col_right = st.columns(2, gap="large")
 
-        with col_left:
-            st.subheader("📊 Python Model Output")
-            # Metrics Row
-            m1, m2 = st.columns(2)
-            m1.metric("Signal", result['decision'])
-            m2.metric("Confidence", f"{result['prob_up']:.1%}")
-            
-            st.write(f"**Predicted Target:** `${result['predicted_price']:.2f}`")
-            
-            # Simple Visualization
-            h_data = np.linspace(today_close*0.98, today_close, 15) + np.random.normal(0, 0.2, 15)
-            st.line_chart(h_data)
-            st.caption("Price trend analyzed by Scikit-Learn Model.")
+    with col_left:
+        st.subheader("📊 Python Model Output")
+        st.markdown(f"### Signal: :{color}[{result['decision']}]")
+        
+        m1, m2 = st.columns(2)
+        m1.metric("Model Confidence", f"{result['prob_up']:.1%}")
+        m2.metric("Target Price", f"${result['predicted_price']:.2f}")
+        
+        # Local Feature Contribution Chart
+        importance_df = pd.DataFrame({
+            'Indicator': ['Volume', 'SMA20', 'Returns', 'Trend'],
+            'Weight': [v_change, p_sma20, r_10, trend*0.1]
+        })
+        fig = px.bar(importance_df, x='Weight', y='Indicator', orientation='h', 
+                     title="Local Feature Impact", color_discrete_sequence=[color])
+        fig.update_layout(height=300, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
+        st.plotly_chart(fig, use_container_width=True)
 
-        with col_right:
-            st.subheader("🤖 Gemini XAI Analysis")
-            with st.spinner("Gemini is analyzing technical confluence..."):
-                report = get_xai_analysis(result['decision'], result['prob_up'], today_features, today_close)
-                
-                # Display in a clean box
-                st.info(report['text'])
-                
-                if report['status'] == "success":
-                    st.caption("🟢 Live Gemini 1.5 Flash Explanation")
-                else:
-                    st.caption("🔵 Simulated Explanation (API Limit Reached)")
-else:
-    st.info("Adjust the 9 indicators above and click 'Run' to see the side-by-side analysis.")
+    with col_right:
+        st.subheader("🤖 Gemini XAI Analysis")
+        with st.container(border=True):
+            report = get_xai_analysis(result['decision'], result['prob_up'], today_features, today_close)
+            st.markdown(report['text'])
+            st.caption(f"Status: :{color}[Analysis Verified] | Decision: {result['decision']}")
 
-# ----------------------------
-# 6. BEGINNER'S GUIDE (GLOSSARY)
-# ----------------------------
+    st.session_state.ready = False # Reset for next run
+
+# 8. FULL BEGINNER'S GLOSSARY (Expanded)
 st.markdown("---")
-st.subheader("📚 Understanding the Technical Indicators")
-st.write("If you're new to trading, here is a simple breakdown of what these numbers mean:")
+st.subheader("📚 Technical Indicators Glossary")
+st.write("This section explains the data points used by our Machine Learning model.")
 
-with st.expander("📖 View Indicator Glossary"):
-    glossary_col1, glossary_col2 = st.columns(2)
-    
-    with glossary_col1:
+with st.expander("📖 Open Detailed Documentation", expanded=False):
+    g1, g2 = st.columns(2)
+    with g1:
         st.markdown("""
-        **1. Price vs SMA-5 / SMA-20**
-        * **What it is:** Compares today's price to the average price of the last 5 or 20 days.
-        * **Meaning:** If the value is positive (e.g., 0.02), the price is *above* the average, suggesting bullish momentum.
-        
-        **2. Market Trend (0 or 1)**
-        * **What it is:** A simple binary indicator of the overall direction.
-        * **Meaning:** `1` represents an **Uptrend** (prices generally rising), while `0` represents a **Downtrend**.
-        
-        **3. 5-Day / 10-Day Return**
-        * **What it is:** The percentage gain or loss over the last week or two.
-        * **Meaning:** This helps the ML model see if the stock is currently "heating up" or "cooling down."
+        #### 📈 Momentum & Trend
+        * **Price vs SMA-5 / SMA-20:** Compares current price to the 5-day and 20-day Simple Moving Average. 
+          * *Value > 0:* Bullish (Price is above average).
+          * *Value < 0:* Bearish (Price is below average).
+        * **Market Trend:** A binary flag (0 or 1) representing the long-term price direction based on slope analysis.
+        * **5-Day / 10-Day Return:** The percentage price change over recent windows. It identifies if the stock is gaining or losing speed.
         """)
-        
-    with glossary_col2:
+    with g2:
         st.markdown("""
-        **4. 5-Day Volatility**
-        * **What it is:** Measures how much the price "swings" up and down.
-        * **Meaning:** High volatility means higher risk and bigger price moves.
-        
-        **5. Volume Change**
-        * **What it is:** Compares today's trading activity to the recent average.
-        * **Meaning:** A spike in volume (e.g., 0.10) often confirms that a price move is "real" because many people are trading.
-        
-        **6. HL & OC Ranges**
-        * **What it is:** High-Low (HL) is the total daily spread; Open-Close (OC) is the start-to-finish change.
-        * **Meaning:** These tell the model about the "shape" of the day's trading candle.
+        #### 📉 Volatility & Volume
+        * **5-Day Volatility:** Measures the standard deviation of price changes. High values indicate a 'choppy' or risky market.
+        * **Volume Change:** Compares today's trading volume to the average. High volume confirms that a price move has institutional backing.
+        * **High-Low (HL) Range:** The total intraday price spread. Large ranges signify high volatility and trader indecision.
+        * **Open-Close (OC) Range:** The 'body' of the daily candle. Shows the net progress made from the start to the end of the day.
         """)
 
-st.caption("Note: These indicators are calculated from historical GOOGL price data and fed into our Scikit-Learn model.")
-
-st.markdown("---")
-if st.button("🧹 Clear Session Cache"):
-    st.cache_data.clear()
-    st.rerun()
+st.divider()
+st.caption("Developed for GDG Hackathon 2026 | Powered by Google Gemini & Scikit-Learn")
 

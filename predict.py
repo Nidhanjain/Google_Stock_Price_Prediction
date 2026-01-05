@@ -1,58 +1,81 @@
 import pickle
 import pandas as pd
+import numpy as np
 
 # ----------------------------
-# Load CLASSIFICATION artifacts
+# 1. Load ML Artifacts
 # ----------------------------
-clf = pickle.load(open("stock_model.pkl", "rb"))
-clf_scaler = pickle.load(open("scaler.pkl", "rb"))
-clf_features = pickle.load(open("features.pkl", "rb"))
+# Ensure these files are in the same folder as predict.py
+try:
+    clf = pickle.load(open("stock_model.pkl", "rb"))
+    clf_scaler = pickle.load(open("scaler.pkl", "rb"))
+    clf_features = pickle.load(open("features.pkl", "rb"))
 
-# ----------------------------
-# Load REGRESSION artifacts
-# ----------------------------
-reg = pickle.load(open("return_model.pkl", "rb"))
-reg_scaler = pickle.load(open("return_scaler.pkl", "rb"))
-reg_features = pickle.load(open("return_features.pkl", "rb"))
+    reg = pickle.load(open("return_model.pkl", "rb"))
+    reg_scaler = pickle.load(open("return_scaler.pkl", "rb"))
+    reg_features = pickle.load(open("return_features.pkl", "rb"))
+except FileNotFoundError as e:
+    print(f"Error: Missing model files. {e}")
 
-
-def predict_today(today_dict, today_close, threshold_buy=0.60, threshold_sell=0.45):
-    # 1. ---------- CLASSIFICATION ----------
-    X_clf = pd.DataFrame([today_dict])[clf_features]
+def predict_today(today_dict, today_close, threshold_buy=0.55, threshold_sell=0.45):
+    """
+    Core Prediction Engine:
+    - Classification: Determines direction (Buy/Sell/No Trade)
+    - Regression: Determines target price
+    """
+    
+    # 1. ---------- PREPARE DATA ----------
+    # Convert dict to DataFrame and ensure columns match training order
+    df_input = pd.DataFrame([today_dict])
+    
+    # 2. ---------- CLASSIFICATION (Direction) ----------
+    X_clf = df_input[clf_features]
     X_clf_scaled = clf_scaler.transform(X_clf)
+    
+    # Get probability of class 1 (Price Up)
     prob_up = clf.predict_proba(X_clf_scaled)[0, 1]
 
-    # 2. ---------- REGRESSION (Move this up!) ----------
-    X_reg = pd.DataFrame([today_dict])[reg_features]
+    # 3. ---------- REGRESSION (Target Price) ----------
+    X_reg = df_input[reg_features]
     X_reg_scaled = reg_scaler.transform(X_reg)
 
     predicted_return = reg.predict(X_reg_scaled)[0]
     predicted_price = today_close * (1 + predicted_return)
 
-    # 3. ---------- CONFIDENCE BAND ----------
-    error_band = 0.01  # 1% MAE assumption
+    # Confidence Band (1% Margin of Error)
+    error_band = 0.01 
     lower_price = today_close * (1 + predicted_return - error_band)
     upper_price = today_close * (1 + predicted_return + error_band)
 
-    # 4. ---------- DECISION LOGIC ----------
-    if today_dict['price_sma20'] > 0.10 and today_dict['vol_change'] < 0:
+    # 4. ---------- DECISION LOGIC (The "Brain") ----------
+    # RULE A: Overbought Safety Valve
+    # If price is >15% above SMA20 and volume is falling, it's a trap.
+    if today_dict['price_sma20'] > 0.15 and today_dict['vol_change'] < -0.10:
         decision = "SELL"
-    elif today_dict['price_sma20'] < -0.07:
-        decision = "SELL"
+    
+    # RULE B: Oversold Recovery
+    # If price is crashed >10% below SMA20, look for a bounce.
+    elif today_dict['price_sma20'] < -0.10:
+        decision = "BUY"
+    
+    # RULE C: ML Model Probability
     elif prob_up >= threshold_buy:
         decision = "BUY"
     elif prob_up <= threshold_sell:
         decision = "SELL"
+    
+    # RULE D: Neutral Zone
     else:
-        decision = "NO TRADE" # Just set the variable, don't return yet!
+        decision = "NO TRADE"
 
-    # 5. ---------- SINGLE RETURN PATH ----------
+    # 5. ---------- RETURN RESULTS ----------
     return {
         "decision": decision,
         "prob_up": prob_up,
         "predicted_return": predicted_return,
         "predicted_price": predicted_price,
         "lower_price": lower_price,
-        "upper_price": upper_price
+        "upper_price": upper_price,
+        "features_used": list(today_dict.keys())
     }
 
