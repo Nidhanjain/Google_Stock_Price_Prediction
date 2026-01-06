@@ -33,7 +33,7 @@ def predict_today(today_dict, today_close, threshold_buy=0.55, threshold_sell=0.
     X_clf_scaled = clf_scaler.transform(X_clf)
     
     # Get probability of class 1 (Price Up)
-    prob_up = clf.predict_proba(X_clf_scaled)[0, 1]
+    prob_up = clf.predict_proba(X_clf_scaled)[0, 0]
 
     # 3. ---------- REGRESSION (Target Price) ----------
     X_reg = df_input[reg_features]
@@ -48,26 +48,26 @@ def predict_today(today_dict, today_close, threshold_buy=0.55, threshold_sell=0.
     upper_price = today_close * (1 + predicted_return + error_band)
 
     # 4. ---------- DECISION LOGIC (The "Brain") ----------
-
-    # Check if the model is inverted:
-    # If prob_up is LOW but indicators are BULLISH, the model classes are likely swapped.
-    # To fix this, we ensure BUY triggers when the model is confident in EITHER direction 
-    # as long as it matches your thresholds.
+    
+    # Check if the AI is giving a high probability
     if prob_up >= threshold_buy:
-        # If model says BUY, we show BUY
-        decision = "BUY"
-    elif prob_up <= threshold_sell:
-        # If model says SELL, we show SELL
-        decision = "SELL"
-    else:
-        # If it's stuck in the middle, we use the "Indicator Tie-Breaker"
-        if today_dict['price_sma5'] > 0.02 and today_dict['vol_change'] > 0.10:
+        # If indicators are also positive, it's a BUY
+        if today_dict['price_sma5'] > 0:
             decision = "BUY"
-        elif today_dict['price_sma5'] < -0.02 and today_dict['vol_change'] > 0.10:
-            decision = "SELL"
+        # If AI is high but indicators are crashing, the AI is inverted -> it's a SELL
         else:
-            decision = "NO TRADE"
+            decision = "SELL"
             
+    elif prob_up <= threshold_sell:
+        # If AI is low and indicators are crashing, it's a SELL
+        if today_dict['price_sma5'] < 0:
+            decision = "SELL"
+        # If AI is low but price is surging, it's a BUY
+        else:
+            decision = "BUY"
+    else:
+        decision = "NO TRADE"
+
     # 5. ---------- RETURN RESULTS ----------
     return {
         "decision": decision,
