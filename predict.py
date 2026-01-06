@@ -66,12 +66,13 @@ def predict_today(today_dict, today_close, threshold_buy=0.55, threshold_sell=0.
         decision = "SELL" if today_dict['price_sma5'] < 0 else "BUY"
         
     else:
-        # FINAL FALLBACK: If slightly bullish, just say BUY for the demo
-        if prob_up > 0.50 and today_dict['price_sma5'] > 0:
+        # Only suggest a trade if the probability is significantly away from 0.50
+        if prob_up > 0.53 and today_dict['price_sma5'] > 0.01:
             decision = "BUY"
-        elif prob_up < 0.50 and today_dict['price_sma5'] < 0:
+        elif prob_up < 0.47 and today_dict['price_sma5'] < -0.01:
             decision = "SELL"
         else:
+            # If everything is flat (near 0) or volume is low, force NO TRADE
             decision = "NO TRADE"
 
     # 5. ---------- RETURN RESULTS ----------
