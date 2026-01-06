@@ -48,26 +48,25 @@ def predict_today(today_dict, today_close, threshold_buy=0.55, threshold_sell=0.
     upper_price = today_close * (1 + predicted_return + error_band)
 
     # 4. ---------- DECISION LOGIC (The "Brain") ----------
-    # RULE A: Overbought Safety Valve
-    # If price is >15% above SMA20 and volume is falling, it's a trap.
-    if today_dict['price_sma20'] > 0.15 and today_dict['vol_change'] < -0.10:
-        decision = "SELL"
+   # 4. ---------- DECISION LOGIC ----------
     
-    # RULE B: Oversold Recovery
-    # If price is crashed >10% below SMA20, look for a bounce.
-    elif today_dict['price_sma20'] < -0.10:
-        decision = "BUY"
-    
-    # RULE C: ML Model Probability
-    elif prob_up >= threshold_buy:
+    # FIRST: Check the ML Model Probability (Priority)
+    if prob_up >= threshold_buy:
         decision = "BUY"
     elif prob_up <= threshold_sell:
         decision = "SELL"
     
-    # RULE D: Neutral Zone
+    # SECOND: Apply "Safety Overrides" only if the model is unsure
     else:
-        decision = "NO TRADE"
-
+        # If SMA20 is very high but volume is dropping, it's a "Sell" trap
+        if today_dict['price_sma20'] > 0.12 and today_dict['vol_change'] < 0:
+            decision = "SELL"
+        # If price is crashed way below the average, it's a "Buy" bounce
+        elif today_dict['price_sma20'] < -0.08:
+            decision = "BUY"
+        else:
+            decision = "NO TRADE"
+            
     # 5. ---------- RETURN RESULTS ----------
     return {
         "decision": decision,
