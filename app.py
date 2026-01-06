@@ -11,13 +11,24 @@ from predict import predict_today
 # 1. PAGE CONFIG & CUSTOM STYLING
 st.set_page_config(page_title="Google Stock Analysis System | XAI", layout="wide", initial_sidebar_state="expanded")
 
-# Custom CSS for a clean, student-professional look
+# Custom CSS for high-visibility metrics
 st.markdown("""
 <style>
-    .stMetric { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #dee2e6; }
-    .main-header { font-size: 32px; font-weight: bold; color: #1f1f1f; margin-bottom: 5px; }
-    .sub-text { color: #666; margin-bottom: 25px; }
-    .status-box { padding: 20px; border-radius: 10px; margin-bottom: 20px; border: 1px solid #eee; }
+    /* Style the metric container */
+    [data-testid="stMetricValue"] {
+        color: #1f1f1f !important; /* Forces text to be dark grey/black */
+        font-weight: bold;
+    }
+    [data-testid="stMetricLabel"] {
+        color: #666 !important; /* Forces label to be visible */
+    }
+    .stMetric {
+        background-color: #ffffff; /* White background for the card */
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #dee2e6;
+        box-shadow: 2px 2px 5px rgba(0,0,0,0.05);
+    }
 </style>
 """, unsafe_allow_html=True)
 
