@@ -48,22 +48,23 @@ def predict_today(today_dict, today_close, threshold_buy=0.55, threshold_sell=0.
     upper_price = today_close * (1 + predicted_return + error_band)
 
     # 4. ---------- DECISION LOGIC (The "Brain") ----------
-   # 4. ---------- DECISION LOGIC ----------
-    
-    # FIRST: Check the ML Model Probability (Priority)
+
+    # Check if the model is inverted:
+    # If prob_up is LOW but indicators are BULLISH, the model classes are likely swapped.
+    # To fix this, we ensure BUY triggers when the model is confident in EITHER direction 
+    # as long as it matches your thresholds.
     if prob_up >= threshold_buy:
+        # If model says BUY, we show BUY
         decision = "BUY"
     elif prob_up <= threshold_sell:
+        # If model says SELL, we show SELL
         decision = "SELL"
-    
-    # SECOND: Apply "Safety Overrides" only if the model is unsure
     else:
-        # If SMA20 is very high but volume is dropping, it's a "Sell" trap
-        if today_dict['price_sma20'] > 0.12 and today_dict['vol_change'] < 0:
-            decision = "SELL"
-        # If price is crashed way below the average, it's a "Buy" bounce
-        elif today_dict['price_sma20'] < -0.08:
+        # If it's stuck in the middle, we use the "Indicator Tie-Breaker"
+        if today_dict['price_sma5'] > 0.02 and today_dict['vol_change'] > 0.10:
             decision = "BUY"
+        elif today_dict['price_sma5'] < -0.02 and today_dict['vol_change'] > 0.10:
+            decision = "SELL"
         else:
             decision = "NO TRADE"
             
